@@ -1,0 +1,17 @@
+# Environnement virtuel (très lourd, ne pas pusher)
+venv311/
+venv/
+.venv/
+
+# Fichiers de cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Données et résultats locaux
+*.csv
+*.png
+*.html
+
+# Configuration VS Code
+.vscode/
