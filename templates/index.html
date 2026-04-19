@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Traffic Prediction</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+
+        .legend {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            line-height: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+console.log("✅ JS chargé");
+
+const map = L.map('map').setView([33.97, -118.18], 11);
+
+// Fond de carte
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+// Groupe de markers (pour refresh)
+let markersLayer = L.layerGroup().addTo(map);
+
+// Fonction principale
+async function loadSensors() {
+    try {
+        console.log("🔄 Chargement des données...");
+
+        // Nettoyer anciens markers
+        markersLayer.clearLayers();
+
+        // Fetch capteurs
+        const res = await fetch('/api/sensors');
+        const sensors = await res.json();
+        console.log("📍 Sensors:", sensors.length);
+
+        // Fetch prédictions
+        const predRes = await fetch('/api/predict');
+        const predictions = await predRes.json();
+        console.log("📊 Predictions:", predictions);
+
+        if (!predictions || Object.keys(predictions).length === 0) {
+            console.warn("⚠️ Predictions vides !");
+        }
+
+        sensors.forEach(sensor => {
+
+            // Sécurité données
+            if (!sensor.Latitude || !sensor.Longitude) return;
+
+            const id = sensor.ID.toString();
+            const value = predictions[id] || 0;
+
+            // Couleur selon trafic
+            let color = "green";
+            if (value < 30) color = "red";
+            else if (value < 60) color = "orange";
+
+            const marker = L.circleMarker(
+                [sensor.Latitude, sensor.Longitude],
+                {
+                    radius: 6,
+                    color: color,
+                    fillOpacity: 0.8
+                }
+            );
+
+let trafficStatus = "HIGH";
+if (value < 30) trafficStatus = "LOW";
+else if (value < 60) trafficStatus = "MEDIUM";
+
+marker.bindPopup(`
+    <div style="font-size:14px;">
+        <b>🚗 Sensor ID:</b> ${id} <br>
+        <b>📍 Highway:</b> ${sensor.Fwy || "N/A"} <br>
+        <b>🧭 Direction:</b> ${sensor.Dir || "N/A"} <br>
+        <b>🏙 District:</b> ${sensor.District || "N/A"} <br>
+        <b>⚡ Speed:</b> ${value.toFixed(2)} <br>
+        <b>📊 Traffic:</b> ${trafficStatus} <br>
+        <b>🌍 Lat:</b> ${sensor.Latitude} <br>
+        <b>🌍 Lon:</b> ${sensor.Longitude}
+    </div>
+`);
+
+            markersLayer.addLayer(marker);
+        });
+
+    } catch (error) {
+        console.error("❌ ERREUR JS:", error);
+    }
+}
+
+// Charger au début
+loadSensors();
+
+// 🔄 Rafraîchir toutes les 5 secondes
+setInterval(loadSensors, 5000);
+
+// Légende
+const legend = L.control({position: 'bottomleft'});
+
+legend.onAdd = function () {
+    const div = L.DomUtil.create('div', 'legend');
+    div.innerHTML = `
+        <b>Traffic Speed</b><br>
+        <i style="background:red;width:12px;height:12px;display:inline-block;border-radius:50%"></i> Low <br>
+        <i style="background:orange;width:12px;height:12px;display:inline-block;border-radius:50%"></i> Medium <br>
+        <i style="background:green;width:12px;height:12px;display:inline-block;border-radius:50%"></i> High
+    `;
+    return div;
+};
+
+legend.addTo(map);
+
+</script>
+
+</body>
+</html>

@@ -8,10 +8,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Données et résultats locaux
-*.csv
-*.png
-*.html
 
 # Configuration VS Code
 .vscode/
+
+# ⚠️ Ne pas ignorer les images ni les fichiers HTML
+# (donc suppression de *.png et *.html)
