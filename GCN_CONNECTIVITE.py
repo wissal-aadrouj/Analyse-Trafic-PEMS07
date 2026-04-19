@@ -14,7 +14,7 @@ from tensorflow.keras.models import Model
 # ==========================================================
 
 raw_data = np.load("PEMS07.npz")
-data_values = raw_data['data'][:, :, 0]  # vitesse uniquement
+data_values = raw_data['data']
 num_nodes = data_values.shape[1]
 
 # Création X et y avant normalisation
@@ -223,4 +223,269 @@ nx.draw_networkx_edges(G_sub, pos, alpha=0.3)
 
 plt.title("Graphe Spatial du GCN (structure des capteurs)")
 plt.axis("off")
+plt.show()
+
+# ==========================================================
+# 9. ANALYSE DE CONVERGENCE ET COMPLEXITÉ AVEC VISUALISATIONS
+# ==========================================================
+
+import time
+import psutil
+import os
+
+print("\n====== ANALYSE DU MODÈLE GCN ======")
+
+# -----------------------------
+# PARAMÈTRES DU MODÈLE
+# -----------------------------
+
+N = num_nodes
+F_in = 1
+F_hidden = 16
+F_out = 1
+
+# Nombre d'arêtes
+E = np.count_nonzero(A_norm) / 2
+
+print("Nombre de noeuds :", N)
+print("Nombre d'arêtes :", int(E))
+
+# ==========================================================
+# COMPLEXITÉ TEMPORELLE
+# ==========================================================
+
+time_complexity_layer1 = E * F_in + N * F_in * F_hidden
+time_complexity_layer2 = E * F_hidden + N * F_hidden * F_out
+
+time_complexity_total = time_complexity_layer1 + time_complexity_layer2
+
+print("\nComplexité temporelle approximative :")
+print("Layer1 :", int(time_complexity_layer1))
+print("Layer2 :", int(time_complexity_layer2))
+print("Total :", int(time_complexity_total))
+
+# ==========================================================
+# COMPLEXITÉ MÉMOIRE
+# ==========================================================
+
+adj_memory = N * N
+feature_memory = N * F_hidden
+weights_memory = (F_in * F_hidden) + (F_hidden * F_out)
+
+memory_complexity = adj_memory + feature_memory + weights_memory
+
+print("\nComplexité mémoire approximative :")
+print("Adjacency :", adj_memory)
+print("Features :", feature_memory)
+print("Weights :", weights_memory)
+print("Total :", memory_complexity)
+
+# ==========================================================
+# ANALYSE DU GRADIENT
+# ==========================================================
+
+with tf.GradientTape() as tape:
+    predictions = model_gcn(X_train[:32])
+    loss = tf.keras.losses.MSE(y_train[:32], predictions)
+
+grads = tape.gradient(loss, model_gcn.trainable_variables)
+
+grad_norm = 0
+
+for g in grads:
+    grad_norm += tf.reduce_sum(tf.square(g))
+
+grad_norm = tf.sqrt(grad_norm)
+
+print("\nNorme du gradient :", grad_norm.numpy())
+
+# ==========================================================
+# CRITÈRE DE CONVERGENCE
+# ==========================================================
+
+loss_values = history.history['loss']
+val_loss_values = history.history['val_loss']
+
+delta_loss = abs(loss_values[-1] - loss_values[-2])
+
+print("\nVariation de loss :", delta_loss)
+
+if delta_loss < 1e-4:
+    print("Le modèle a convergé.")
+else:
+    print("Le modèle peut encore apprendre.")
+
+# ==========================================================
+# TEMPS D'INFERENCE
+# ==========================================================
+
+start = time.time()
+model_gcn.predict(X_test[:32])
+end = time.time()
+
+inference_time = end - start
+
+print("\nTemps d'inférence (32 samples) :", inference_time, "secondes")
+
+# ==========================================================
+# UTILISATION MÉMOIRE
+# ==========================================================
+
+process = psutil.Process(os.getpid())
+memory_used = process.memory_info().rss / 1024**2
+
+print("Mémoire utilisée par le programme :", memory_used, "MB")
+
+# ==========================================================
+# VISUALISATIONS SCIENTIFIQUES
+# ==========================================================
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# ----------------------------------------------------------
+# 1. GRAPHE DE CONVERGENCE LOSS
+# ----------------------------------------------------------
+
+plt.figure(figsize=(8,5))
+plt.plot(loss_values,label="Train Loss")
+plt.plot(val_loss_values,label="Validation Loss")
+plt.xlabel("Epochs")
+plt.ylabel("Loss (MSE)")
+plt.title("Convergence du modèle GCN")
+plt.legend()
+plt.grid()
+plt.show()
+
+# ----------------------------------------------------------
+# 2. STABILITÉ DU GRADIENT
+# ----------------------------------------------------------
+
+gradient_values = []
+
+for batch in range(10):
+    
+    with tf.GradientTape() as tape:
+        pred = model_gcn(X_train[batch:batch+32])
+        loss = tf.keras.losses.MSE(y_train[batch:batch+32], pred)
+        
+    grads = tape.gradient(loss, model_gcn.trainable_variables)
+    
+    norm = 0
+    for g in grads:
+        norm += tf.reduce_sum(tf.square(g))
+        
+    norm = tf.sqrt(norm)
+    gradient_values.append(norm.numpy())
+
+plt.figure(figsize=(8,5))
+plt.plot(gradient_values, marker='o')
+plt.title("Norme du Gradient (Stabilité de l'apprentissage)")
+plt.xlabel("Batch")
+plt.ylabel("Gradient Norm")
+plt.grid()
+plt.show()
+
+# ----------------------------------------------------------
+# 3. COMPLEXITÉ TEMPORELLE PAR COUCHE
+# ----------------------------------------------------------
+
+layers = ["GCN Layer 1","GCN Layer 2"]
+complexity = [time_complexity_layer1,time_complexity_layer2]
+
+plt.figure(figsize=(7,5))
+sns.barplot(x=layers,y=complexity)
+plt.title("Complexité temporelle par couche")
+plt.ylabel("Nombre d'opérations")
+plt.show()
+
+# ----------------------------------------------------------
+# 4. COMPLEXITÉ MÉMOIRE
+# ----------------------------------------------------------
+
+labels = ["Adjacency","Features","Weights"]
+sizes = [adj_memory,feature_memory,weights_memory]
+
+plt.figure(figsize=(6,6))
+plt.pie(sizes,labels=labels,autopct='%1.1f%%')
+plt.title("Répartition de la mémoire du modèle")
+plt.show()
+
+# ----------------------------------------------------------
+# 5. TEMPS D'INFERENCE
+# ----------------------------------------------------------
+
+plt.figure(figsize=(6,4))
+plt.bar(["Inference Time"],[inference_time])
+plt.title("Temps d'inférence du modèle")
+plt.ylabel("Secondes")
+plt.show()
+
+
+# ==========================================================
+# 10. GRAPH LAPLACIAN SPECTRUM
+# ==========================================================
+
+print("\n====== ANALYSE DU SPECTRE DU GRAPHE ======")
+
+# Calcul du Laplacien
+degree_matrix = np.diag(np.sum(A_norm, axis=1))
+laplacian = degree_matrix - A_norm
+
+# Valeurs propres
+eigenvalues = np.linalg.eigvals(laplacian)
+
+# Trier
+eigenvalues = np.sort(eigenvalues)
+
+print("Nombre de valeurs propres :", len(eigenvalues))
+
+# Graphique
+plt.figure(figsize=(8,5))
+plt.plot(eigenvalues)
+plt.title("Spectre du Laplacien du Graphe (PEMS07)")
+plt.xlabel("Index")
+plt.ylabel("Valeur propre")
+plt.grid()
+plt.show()
+
+# ==========================================================
+# 11. ANALYSE DE SCALABILITÉ DU GCN
+# ==========================================================
+
+print("\n====== ANALYSE DE SCALABILITÉ ======")
+
+nodes_range = np.arange(10, num_nodes, 10)
+
+complexity_values = []
+
+for n in nodes_range:
+    
+    # approx edges proportionnelles
+    edges = n * 2  
+    
+    comp = edges * F_hidden + n * F_hidden * F_out
+    complexity_values.append(comp)
+
+plt.figure(figsize=(8,5))
+plt.plot(nodes_range, complexity_values, marker='o')
+plt.title("Scalabilité du GCN (Complexité vs Nombre de Capteurs)")
+plt.xlabel("Nombre de Capteurs")
+plt.ylabel("Complexité Approximative")
+plt.grid()
+plt.show()
+
+
+# ==========================================================
+# 12. DISTRIBUTION DES DEGRÉS DU GRAPHE
+# ==========================================================
+
+degrees = [d for n, d in G.degree()]
+
+plt.figure(figsize=(8,5))
+plt.hist(degrees, bins=20)
+plt.title("Distribution du degré des capteurs")
+plt.xlabel("Nombre de connexions")
+plt.ylabel("Fréquence")
+plt.grid()
 plt.show()
